@@ -18,7 +18,6 @@ RelayCacheProcessor.prototype.originalVisitNode = RelayCacheProcessor.prototype.
 RelayCacheProcessor.prototype.visitNode = jest.fn(function(node, dataID, nextState) {
   calls['visitNode'] = calls['visitNode'] || []
   calls['visitNode'].push(node.constructor.name)
-  RelayCacheProcessor.a = 1
   return this.originalVisitNode.apply(this, arguments)
 });
 RelayCacheProcessor.getCalls = function() { return calls };
