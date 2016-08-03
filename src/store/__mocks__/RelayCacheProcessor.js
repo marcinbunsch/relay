@@ -9,4 +9,19 @@
 
 'use strict';
 
-module.exports = require.requireActual('RelayCacheProcessor');
+var RelayCacheProcessor = require.requireActual('RelayCacheProcessor');
+
+// This is horrible, but don't have an idea how to do it differently :(
+global.calls = global.calls || {}
+
+RelayCacheProcessor.prototype.originalVisitNode = RelayCacheProcessor.prototype.visitNode;
+RelayCacheProcessor.prototype.visitNode = jest.fn(function(node, dataID, nextState) {
+  calls['visitNode'] = calls['visitNode'] || []
+  calls['visitNode'].push(node.constructor.name)
+  RelayCacheProcessor.a = 1
+  return this.originalVisitNode.apply(this, arguments)
+});
+RelayCacheProcessor.getCalls = function() { return calls };
+RelayCacheProcessor.clearCalls = function() { global.calls = {} }
+
+module.exports = RelayCacheProcessor

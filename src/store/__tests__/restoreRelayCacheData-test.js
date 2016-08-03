@@ -15,6 +15,7 @@ require('configureForRelayOSS');
 
 const GraphQLRange = require('GraphQLRange');
 const Relay = require('Relay');
+const RelayCacheProcessor = require('RelayCacheProcessor');
 const RelayChangeTracker = require('RelayChangeTracker');
 const RelayGarbageCollector = require('RelayGarbageCollector');
 const RelayQueryPath = require('RelayQueryPath');
@@ -54,10 +55,12 @@ describe('restoreRelayCacheData', () => {
     queries,
     records,
     rootCallMap,
+    syncCacheManager
   }) {
     cachedRecords = cachedRecords || {};
     cachedRootCallMap = cachedRootCallMap || {};
     diskCacheData = diskCacheData || {};
+    syncCacheManager = syncCacheManager || false;
 
     const store = new RelayRecordStore(
       {
@@ -72,16 +75,25 @@ describe('restoreRelayCacheData', () => {
 
     const cacheManager = {
       readNode: jest.fn((id, callback) => {
-        setTimeout(() => {
+        if (syncCacheManager) {
           callback(undefined, diskCacheData[id]);
-        });
+        } else {
+          setTimeout(() => {
+            callback(undefined, diskCacheData[id]);
+          });
+        }
       }),
       readRootCall: jest.fn(
         (callName, callArg, callback) => {
           const rootKey = callName + '*' + callArg;
-          setTimeout(() => {
-            callback(undefined, diskCacheData[rootKey]);
-          });
+          let dataID = diskCacheData[rootKey]
+          if (syncCacheManager) {
+            callback(undefined, dataID);
+          } else {
+            setTimeout(() => {
+              callback(undefined, dataID);
+            });
+          }
         }
       ),
     };
@@ -129,10 +141,59 @@ describe('restoreRelayCacheData', () => {
     jest.resetModuleRegistry();
     jest.clearAllTimers();
     jasmine.addMatchers(RelayTestUtils.matchers);
-
+    RelayCacheProcessor.clearCalls()
   });
 
   describe('restoreQueriesDataFromCache', () => {
+
+    describe("with multiple query children", () => {
+
+      function testRestoreWithManyQueryChildren({async}) {
+        const fragment = Relay.QL`fragment on Viewer {
+          actor { id }
+        }`;
+        const node = Relay.QL`
+          query {
+            viewer {
+              primaryEmail
+              ${fragment}
+            }
+          }
+        `;
+
+        const diskCacheData = {
+          'viewer*': '100',
+          '100': {
+            __dataID__: '100',
+            __typename: 'Viewer',
+            primaryEmail: 'viewer@facebook.com'
+          },
+        };
+
+        const queryNode = getNode(node);
+        const queries = { q0: queryNode };
+
+        const syncCacheManager = !async;
+        const {cacheManager, callbacks, changeTracker, store} =
+          performQueriesRestore(queries, {diskCacheData, syncCacheManager});
+        jest.runAllTimers();
+
+        expect(cacheManager.readRootCall.mock.calls.length).toBe(1);
+
+        // expect it to call visitNode on both nodes
+        var calls = RelayCacheProcessor.getCalls()
+        expect(calls.visitNode).toEqual([ 'RelayQueryField', 'RelayQueryFragment' ]);
+      }
+
+      it('works when cache manager has sync callbacks', () => {
+        testRestoreWithManyQueryChildren({ async: true })
+      });
+
+      it('works when cache manager has async callbacks', () => {
+        testRestoreWithManyQueryChildren({ async: false })
+      });
+    });
+
     it('reads disk for custom root call', () => {
       const queries = {
         q0: getNode(Relay.QL`

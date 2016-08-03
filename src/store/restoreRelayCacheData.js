@@ -227,6 +227,8 @@ class RelayCachedDataRestorator extends RelayCacheProcessor<NodeState> {
       'RelayCachedDataRestorator: Attempted to traverse without a ' +
       '`dataID`.'
     );
+    this.pendingTraversals = this.pendingTraversals || 0;
+    this.pendingTraversals++;
     const {missingData, pendingNodeStates} = findRelayQueryLeaves(
       this._store,
       this._cachedRecords,
@@ -254,6 +256,7 @@ class RelayCachedDataRestorator extends RelayCacheProcessor<NodeState> {
         pendingNodeStates[ii]
       );
     }
+    this.pendingTraversals--;
   }
 
   visitIdentifiedRoot(
@@ -274,6 +277,13 @@ class RelayCachedDataRestorator extends RelayCacheProcessor<NodeState> {
       });
     }
   }
+
+  _isDone(): boolean {
+    let originalIsDone = RelayCacheProcessor.prototype._isDone.call(this);
+    let localIsDone = !this.pendingTraversals || this.pendingTraversals == 0;
+    return originalIsDone && localIsDone;
+  }
+
 }
 
 RelayProfiler.instrumentMethods(RelayCachedDataRestorator.prototype, {
